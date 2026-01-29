@@ -1,4 +1,6 @@
 import streamlit as st
+from PIL import Image
+import pytesseract
 
 st.set_page_config(page_title="GST ITC Mismatch", layout="centered")
 
@@ -9,33 +11,28 @@ st.write("Upload supplier and buyer invoices to detect mismatch")
 st.subheader("Supplier Invoice")
 supplier_file = st.file_uploader(
     "Upload supplier invoice (GSTR-1 side)",
-    type=["png", "jpg", "jpeg", "pdf"],
+    type=["png", "jpg", "jpeg"],
     key="supplier"
 )
 
 st.subheader("Buyer Invoice")
 buyer_file = st.file_uploader(
     "Upload buyer invoice (GSTR-2B side)",
-    type=["png", "jpg", "jpeg", "pdf"],
+    type=["png", "jpg", "jpeg"],
     key="buyer"
 )
 
 st.divider()
 
-# Button
-find_btn = st.button("Find ITC Mismatch")
-
-if find_btn:
+if st.button("Find ITC Mismatch"):
     if not supplier_file or not buyer_file:
-        st.error("Please upload BOTH supplier and buyer invoices first.")
+        st.error("Please upload BOTH invoices.")
     else:
-        st.success("Files received ✅")
+        st.success("Invoices uploaded successfully ✅")
 
-        st.write("### Supplier file")
-        st.write(supplier_file.name)
+        # Read supplier invoice
+        supplier_image = Image.open(supplier_file)
+        supplier_text = pytesseract.image_to_string(supplier_image)
 
-        st.write("### Buyer file")
-        st.write(buyer_file.name)
-
-        # Placeholder result (we will replace with OCR/LLM next)
-        st.info("Next: Extract GSTIN / Invoice No / Tax totals using OCR (LLM) and compare.")
+        st.subheader("Supplier Invoice - Extracted Text")
+        st.text(supplier_text)
