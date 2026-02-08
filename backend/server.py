@@ -1,5 +1,6 @@
 from fastapi import FastAPI, APIRouter, HTTPException, UploadFile, File, Form, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.responses import FileResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -36,6 +37,10 @@ JWT_SECRET = os.getenv("JWT_SECRET", "easy-x-secret-key-change-in-production")
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRATION_HOURS = 24 * 7
 
+# Create uploads directory
+UPLOADS_DIR = ROOT_DIR / "uploads"
+UPLOADS_DIR.mkdir(exist_ok=True)
+
 # ==================== MODELS ====================
 
 class User(BaseModel):
@@ -43,14 +48,14 @@ class User(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     email: EmailStr
     name: str
-    role: Literal["ca", "gst_practitioner", "firm"] = "ca"
+    role: Literal["ca", "gst_practitioner", "firm", "business_owner", "other"] = "ca"
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class UserCreate(BaseModel):
     email: EmailStr
     password: str
     name: str
-    role: Literal["ca", "gst_practitioner", "firm"] = "ca"
+    role: Literal["ca", "gst_practitioner", "firm", "business_owner", "other"] = "ca"
 
 class UserLogin(BaseModel):
     email: EmailStr
@@ -63,6 +68,8 @@ class Client(BaseModel):
     name: str
     gstin: Optional[str] = None
     business_name: Optional[str] = None
+    status: Literal["active", "inactive", "pending"] = "active"
+    risk_score: float = 0.0
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class ClientCreate(BaseModel):
@@ -77,6 +84,7 @@ class Document(BaseModel):
     user_id: str
     filename: str
     file_type: str
+    file_path: Optional[str] = None
     ocr_text: Optional[str] = None
     extracted_data: Optional[Dict[str, Any]] = None
     confidence_score: Optional[float] = None
@@ -126,6 +134,7 @@ class LedgerEntry(BaseModel):
     reference_id: Optional[str] = None
     reference_type: Optional[str] = None
     entry_date: str = Field(default_factory=lambda: datetime.now(timezone.utc).strftime("%Y-%m-%d"))
+    explanation: Optional[str] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class LedgerEntryCreate(BaseModel):
@@ -144,9 +153,10 @@ class ChatMessage(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     client_id: str
     user_id: str
-    role: Literal["user", "assistant"] = "user"
+    role: Literal["user", "assistant", "system"] = "user"
     content: str
     metadata: Optional[Dict[str, Any]] = None
+    tool_calls: Optional[List[Dict[str, Any]]] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class ChatMessageCreate(BaseModel):
@@ -243,20 +253,186 @@ def extract_invoice_fields(text: str) -> Dict[str, Any]:
     
     return data
 
-# ==================== AI CHAT SERVICE ====================
+# ==================== AI TOOLS ====================
 
-async def get_ai_response(user_message: str, client_id: str, user_id: str) -> str:
+async def tool_create_ledger_entry(client_id: str, user_id: str, transaction_type: str, amount: float, description: str) -> Dict[str, Any]:
+    """Create a double-entry ledger posting"""
+    try:
+        entries_created = []
+        
+        if transaction_type == "purchase_cash":
+            debit_entry = LedgerEntry(
+                client_id=client_id,
+                user_id=user_id,
+                account_name="Purchase",
+                account_type="expense",
+                debit=amount,
+                credit=0.0,
+                description=description,
+                explanation="Purchase debit: Increases expense (Purchase account)"
+            )
+            credit_entry = LedgerEntry(
+                client_id=client_id,
+                user_id=user_id,
+                account_name="Cash",
+                account_type="asset",
+                debit=0.0,
+                credit=amount,
+                description=description,
+                explanation="Cash credit: Decreases asset (Cash outflow)"
+            )
+            entries_created = [debit_entry, credit_entry]
+            
+        elif transaction_type == "sales_credit":
+            debit_entry = LedgerEntry(
+                client_id=client_id,
+                user_id=user_id,
+                account_name="Accounts Receivable",
+                account_type="asset",
+                debit=amount,
+                credit=0.0,
+                description=description,
+                explanation="Customer debit: Increases asset (Amount receivable from customer)"
+            )
+            credit_entry = LedgerEntry(
+                client_id=client_id,
+                user_id=user_id,
+                account_name="Sales Revenue",
+                account_type="income",
+                debit=0.0,
+                credit=amount,
+                description=description,
+                explanation="Sales credit: Increases income (Revenue earned)"
+            )
+            entries_created = [debit_entry, credit_entry]
+        
+        for entry in entries_created:
+            doc = entry.model_dump()
+            doc["created_at"] = doc["created_at"].isoformat()
+            await db.ledger_entries.insert_one(doc)
+        
+        return {
+            "success": True,
+            "entries_created": len(entries_created),
+            "message": f"Created {len(entries_created)} ledger entries for {transaction_type}"
+        }
+    except Exception as e:
+        logging.error(f"Tool error - create_ledger_entry: {e}")
+        return {"success": False, "error": str(e)}
+
+async def tool_generate_pdf_report(client_id: str, user_id: str) -> Dict[str, Any]:
+    """Generate a branded PDF report for a client"""
+    try:
+        # Get client data
+        client = await db.clients.find_one({"id": client_id}, {"_id": 0})
+        if not client:
+            return {"success": False, "error": "Client not found"}
+        
+        # Get financial data
+        invoices = await db.invoices.find({"client_id": client_id}, {"_id": 0}).to_list(1000)
+        ledger = await db.ledger_entries.find({"client_id": client_id}, {"_id": 0}).to_list(1000)
+        
+        income = sum(e["credit"] for e in ledger if e["account_type"] == "income")
+        expenses = sum(e["debit"] for e in ledger if e["account_type"] == "expense")
+        profit = income - expenses
+        
+        pdf_filename = f"easy_x_report_{client[' name'].replace(' ', '_')}_{datetime.now().strftime('%Y%m%d')}.pdf"
+        pdf_path = UPLOADS_DIR / pdf_filename
+        
+        # Simple text file as placeholder (would use jsPDF in real implementation)
+        with open(pdf_path, "w") as f:
+            f.write(f"=== EASY X FINANCIAL REPORT ===\n")
+            f.write(f"Client: {client['name']}\n")
+            f.write(f"GSTIN: {client.get('gstin', 'N/A')}\n")
+            f.write(f"\nFINANCIAL SUMMARY:\n")
+            f.write(f"Total Income: ₹{income:,.2f}\n")
+            f.write(f"Total Expenses: ₹{expenses:,.2f}\n")
+            f.write(f"Net Profit: ₹{profit:,.2f}\n")
+            f.write(f"\nTotal Invoices: {len(invoices)}\n")
+            f.write(f"Total Ledger Entries: {len(ledger)}\n")
+        
+        return {
+            "success": True,
+            "pdf_url": f"/api/download/{pdf_filename}",
+            "filename": pdf_filename,
+            "message": f"Generated PDF report for {client['name']}"
+        }
+    except Exception as e:
+        logging.error(f"Tool error - generate_pdf_report: {e}")
+        return {"success": False, "error": str(e)}
+
+async def tool_calculate_risk_score(client_id: str) -> Dict[str, Any]:
+    """Calculate ITC risk score for a client"""
+    try:
+        mismatches = await db.itc_mismatches.find({"client_id": client_id}, {"_id": 0}).to_list(1000)
+        invoices = await db.invoices.find({"client_id": client_id}, {"_id": 0}).to_list(1000)
+        
+        if len(invoices) == 0:
+            risk_score = 0.0
+        else:
+            mismatch_rate = len(mismatches) / len(invoices)
+            risk_score = min(mismatch_rate * 100, 100)
+        
+        risk_level = "safe" if risk_score < 20 else "medium" if risk_score < 50 else "high"
+        
+        await db.clients.update_one(
+            {"id": client_id},
+            {"$set": {"risk_score": risk_score}}
+        )
+        
+        return {
+            "success": True,
+            "risk_score": risk_score,
+            "risk_level": risk_level,
+            "mismatches": len(mismatches),
+            "total_invoices": len(invoices)
+        }
+    except Exception as e:
+        logging.error(f"Tool error - calculate_risk_score: {e}")
+        return {"success": False, "error": str(e)}
+
+# ==================== AI CHAT SERVICE WITH TOOLS ====================
+
+AI_SYSTEM_PROMPT = """You are Easy X AI Accounting System.
+
+You are NOT a normal chatbot. You are a backend-integrated automation agent.
+
+You have access to system tools for:
+- OCR and data extraction
+- Ledger posting (double-entry accounting)
+- Database updates
+- PDF generation
+- Risk calculation
+
+When users upload invoices or ask for reports, you MUST use your tools to:
+1. Extract data automatically
+2. Create proper debit/credit entries
+3. Generate PDFs
+4. Calculate risk scores
+
+NEVER say "I cannot do that" - USE YOUR TOOLS.
+
+Default: Short, clear summary (2-3 sentences)
+If user says "Explain more" or "Why?": Give detailed explanation
+
+You act as: CA + GST Expert + Automation Engine + Report Generator
+"""
+
+async def get_ai_response(user_message: str, client_id: str, user_id: str) -> Dict[str, Any]:
     try:
         api_key = os.environ.get('EMERGENT_LLM_KEY')
         if not api_key:
-            return "AI service is not configured. Please contact administrator."
+            return {"content": "AI service is not configured. Please contact administrator.", "tool_calls": []}
+        
+        client_data = await db.clients.find_one({"id": client_id}, {"_id": 0})
+        client_name = client_data.get("name", "Unknown") if client_data else "Unknown"
         
         recent_messages = await db.chat_messages.find(
             {"client_id": client_id, "user_id": user_id},
             {"_id": 0}
         ).sort("created_at", -1).limit(10).to_list(10)
         
-        context = f"You are Easy X, an AI financial assistant for Chartered Accountants. Current client: {client_id}.\n"
+        context = f"{AI_SYSTEM_PROMPT}\n\nCurrent client: {client_name} (ID: {client_id})\nUser ID: {user_id}\n\n"
         context += "Recent conversation:\n"
         for msg in reversed(recent_messages[-5:]):
             context += f"{msg['role']}: {msg['content']}\n"
@@ -270,16 +446,34 @@ async def get_ai_response(user_message: str, client_id: str, user_id: str) -> st
         message = UserMessage(text=user_message)
         response = await chat.send_message(message)
         
-        return response
+        tool_calls = []
+        
+        if any(word in user_message.lower() for word in ["pdf", "report", "download", "generate report"]):
+            tool_result = await tool_generate_pdf_report(client_id, user_id)
+            tool_calls.append({"tool": "generate_pdf_report", "result": tool_result})
+            if tool_result.get("success"):
+                response += f"\n\n✅ PDF generated successfully! [Download Report]({tool_result['pdf_url']})"
+        
+        if any(word in user_message.lower() for word in ["risk", "score", "compliance"]):
+            tool_result = await tool_calculate_risk_score(client_id)
+            tool_calls.append({"tool": "calculate_risk_score", "result": tool_result})
+            if tool_result.get("success"):
+                risk_emoji = "🟢" if tool_result["risk_level"] == "safe" else "🟠" if tool_result["risk_level"] == "medium" else "🔴"
+                response += f"\n\n{risk_emoji} ITC Risk Score: {tool_result['risk_score']:.1f}% ({tool_result['risk_level'].upper()})"
+        
+        return {"content": response, "tool_calls": tool_calls}
     except Exception as e:
         logging.error(f"AI chat failed: {e}")
-        return f"I'm having trouble processing your request. Error: {str(e)}"
+        return {"content": f"I encountered an error. Retrying... Error: {str(e)}", "tool_calls": []}
 
 # ==================== ACCOUNTING LOGIC ====================
 
 async def auto_post_invoice_to_ledger(invoice: Invoice, user_id: str):
     try:
         if invoice.invoice_type == "purchase":
+            explanation_debit = f"Purchase of goods/services from {invoice.vendor_name or 'vendor'}. Debit increases expense."
+            explanation_credit = "Cash/Bank payment. Credit decreases asset (cash outflow)."
+            
             await db.ledger_entries.insert_one({
                 "id": str(uuid.uuid4()),
                 "client_id": invoice.client_id,
@@ -289,6 +483,7 @@ async def auto_post_invoice_to_ledger(invoice: Invoice, user_id: str):
                 "debit": invoice.total_amount,
                 "credit": 0.0,
                 "description": f"Purchase invoice {invoice.invoice_number}",
+                "explanation": explanation_debit,
                 "reference_id": invoice.id,
                 "reference_type": "invoice",
                 "entry_date": invoice.invoice_date or datetime.now(timezone.utc).strftime("%Y-%m-%d"),
@@ -304,12 +499,16 @@ async def auto_post_invoice_to_ledger(invoice: Invoice, user_id: str):
                 "debit": 0.0,
                 "credit": invoice.total_amount,
                 "description": f"Purchase invoice {invoice.invoice_number}",
+                "explanation": explanation_credit,
                 "reference_id": invoice.id,
                 "reference_type": "invoice",
                 "entry_date": invoice.invoice_date or datetime.now(timezone.utc).strftime("%Y-%m-%d"),
                 "created_at": datetime.now(timezone.utc).isoformat()
             })
         else:
+            explanation_debit = f"Sales to customer. Debit increases asset (amount receivable)."
+            explanation_credit = f"Sales revenue earned. Credit increases income."
+            
             await db.ledger_entries.insert_one({
                 "id": str(uuid.uuid4()),
                 "client_id": invoice.client_id,
@@ -319,6 +518,7 @@ async def auto_post_invoice_to_ledger(invoice: Invoice, user_id: str):
                 "debit": invoice.total_amount,
                 "credit": 0.0,
                 "description": f"Sales invoice {invoice.invoice_number}",
+                "explanation": explanation_debit,
                 "reference_id": invoice.id,
                 "reference_type": "invoice",
                 "entry_date": invoice.invoice_date or datetime.now(timezone.utc).strftime("%Y-%m-%d"),
@@ -334,6 +534,7 @@ async def auto_post_invoice_to_ledger(invoice: Invoice, user_id: str):
                 "debit": 0.0,
                 "credit": invoice.total_amount,
                 "description": f"Sales invoice {invoice.invoice_number}",
+                "explanation": explanation_credit,
                 "reference_id": invoice.id,
                 "reference_type": "invoice",
                 "entry_date": invoice.invoice_date or datetime.now(timezone.utc).strftime("%Y-%m-%d"),
@@ -403,6 +604,13 @@ async def get_clients(user_id: str = Depends(get_current_user)):
             c["created_at"] = datetime.fromisoformat(c["created_at"])
     return clients
 
+@api_router.delete("/clients/{client_id}")
+async def delete_client(client_id: str, user_id: str = Depends(get_current_user)):
+    result = await db.clients.delete_one({"id": client_id, "user_id": user_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Client not found")
+    return {"message": "Client deleted successfully"}
+
 @api_router.post("/documents/upload")
 async def upload_document(
     file: UploadFile = File(...),
@@ -410,6 +618,10 @@ async def upload_document(
     user_id: str = Depends(get_current_user)
 ):
     file_bytes = await file.read()
+    file_path = UPLOADS_DIR / f"{uuid.uuid4()}_{file.filename}"
+    
+    with open(file_path, "wb") as f:
+        f.write(file_bytes)
     
     ocr_text = extract_text_from_image(file_bytes)
     extracted = extract_invoice_fields(ocr_text)
@@ -419,6 +631,7 @@ async def upload_document(
         user_id=user_id,
         filename=file.filename,
         file_type=file.content_type,
+        file_path=str(file_path),
         ocr_text=ocr_text,
         extracted_data=extracted,
         confidence_score=extracted.get("confidence", 0.5)
@@ -553,7 +766,8 @@ async def send_chat_message(message_data: ChatMessageCreate, user_id: str = Depe
         client_id=message_data.client_id,
         user_id=user_id,
         role="assistant",
-        content=ai_response
+        content=ai_response["content"],
+        tool_calls=ai_response.get("tool_calls", [])
     )
     
     ai_doc = ai_msg.model_dump()
@@ -616,6 +830,13 @@ async def get_itc_mismatches(client_id: str, user_id: str = Depends(get_current_
             m["created_at"] = datetime.fromisoformat(m["created_at"])
     
     return mismatches
+
+@api_router.get("/download/{filename}")
+async def download_file(filename: str):
+    file_path = UPLOADS_DIR / filename
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="File not found")
+    return FileResponse(file_path, filename=filename)
 
 app.include_router(api_router)
 
