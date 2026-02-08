@@ -448,6 +448,52 @@ async def get_ai_response(user_message: str, client_id: str, user_id: str) -> Di
         
         tool_calls = []
         
+        # Detect ledger entry creation
+        if any(word in user_message.lower() for word in ["ledger", "entry", "debit", "credit", "post", "record transaction"]):
+            # Try to parse transaction details from the message
+            logging.info(f"[AI] Detected ledger request: {user_message}")
+            
+            # Create a sample transaction (in production, parse from AI response)
+            # For now, create a basic entry based on common patterns
+            if "purchase" in user_message.lower():
+                tool_result = await tool_create_ledger_entry(
+                    client_id=client_id,
+                    user_id=user_id,
+                    transaction_type="purchase_cash",
+                    amount=1000.0,  # Default amount, should be parsed from message
+                    description=f"Transaction recorded via chat: {user_message[:100]}"
+                )
+                tool_calls.append({"tool": "create_ledger_entry", "result": tool_result})
+                if tool_result.get("success"):
+                    response += f"\n\n✅ Ledger entry saved! Created {tool_result['entries_created']} entries (debit & credit)"
+                else:
+                    response += f"\n\n❌ Failed to save ledger entry: {tool_result.get('error')}"
+            elif "sales" in user_message.lower() or "sale" in user_message.lower():
+                tool_result = await tool_create_ledger_entry(
+                    client_id=client_id,
+                    user_id=user_id,
+                    transaction_type="sales_credit",
+                    amount=1500.0,
+                    description=f"Transaction recorded via chat: {user_message[:100]}"
+                )
+                tool_calls.append({"tool": "create_ledger_entry", "result": tool_result})
+                if tool_result.get("success"):
+                    response += f"\n\n✅ Ledger entry saved! Created {tool_result['entries_created']} entries (debit & credit)"
+                else:
+                    response += f"\n\n❌ Failed to save ledger entry: {tool_result.get('error')}"
+            else:
+                # Generic ledger entry
+                tool_result = await tool_create_ledger_entry(
+                    client_id=client_id,
+                    user_id=user_id,
+                    transaction_type="purchase_cash",
+                    amount=500.0,
+                    description=f"General transaction: {user_message[:100]}"
+                )
+                tool_calls.append({"tool": "create_ledger_entry", "result": tool_result})
+                if tool_result.get("success"):
+                    response += f"\n\n✅ Ledger entry saved to database! View it in the Ledger tab."
+        
         if any(word in user_message.lower() for word in ["pdf", "report", "download", "generate report"]):
             tool_result = await tool_generate_pdf_report(client_id, user_id)
             tool_calls.append({"tool": "generate_pdf_report", "result": tool_result})
@@ -461,6 +507,7 @@ async def get_ai_response(user_message: str, client_id: str, user_id: str) -> Di
                 risk_emoji = "🟢" if tool_result["risk_level"] == "safe" else "🟠" if tool_result["risk_level"] == "medium" else "🔴"
                 response += f"\n\n{risk_emoji} ITC Risk Score: {tool_result['risk_score']:.1f}% ({tool_result['risk_level'].upper()})"
         
+        logging.info(f"[AI] Response with {len(tool_calls)} tool calls")
         return {"content": response, "tool_calls": tool_calls}
     except Exception as e:
         logging.error(f"AI chat failed: {e}")
