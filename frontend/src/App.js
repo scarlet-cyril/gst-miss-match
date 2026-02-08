@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { ClientProvider } from '@/contexts/ClientContext';
 import { Toaster } from '@/components/ui/sonner';
+import OnboardingPage from '@/pages/OnboardingPage';
 import LandingPage from '@/pages/LandingPage';
 import Dashboard from '@/pages/Dashboard';
 import '@/App.css';
@@ -21,7 +22,7 @@ const PrivateRoute = ({ children }) => {
     );
   }
 
-  return user ? children : <Navigate to="/" replace />;
+  return user ? children : <Navigate to="/auth" replace />;
 };
 
 const PublicRoute = ({ children }) => {
@@ -42,6 +43,8 @@ const PublicRoute = ({ children }) => {
 };
 
 function App() {
+  const hasOnboarded = localStorage.getItem('userRole');
+
   return (
     <AuthProvider>
       <ClientProvider>
@@ -50,6 +53,10 @@ function App() {
             <Routes>
               <Route
                 path="/"
+                element={!hasOnboarded ? <OnboardingPage /> : <Navigate to="/auth" replace />}
+              />
+              <Route
+                path="/auth"
                 element={
                   <PublicRoute>
                     <LandingPage />
