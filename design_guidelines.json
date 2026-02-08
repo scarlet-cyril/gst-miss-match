@@ -1,0 +1,168 @@
+{
+  "brand": {
+    "name": "Easy X",
+    "tagline": "The Financial Cockpit for Modern CAs",
+    "description": "An AI-powered financial assistant that combines chat simplicity with audit-grade precision.",
+    "identity": {
+      "archetype": "The Performance Pro",
+      "tone": "Precise, Trustworthy, Efficient, Modern",
+      "visual_theme": "Swiss Precision x AI Future"
+    }
+  },
+  "typography": {
+    "font_family": {
+      "headings": "\"Outfit\", sans-serif",
+      "body": "\"Inter\", sans-serif",
+      "mono": "\"JetBrains Mono\", monospace"
+    },
+    "imports": [
+      "@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&family=Outfit:wght@400;500;600;700&display=swap');"
+    ],
+    "scale": {
+      "h1": "text-4xl font-bold tracking-tight md:text-5xl",
+      "h2": "text-3xl font-semibold tracking-tight",
+      "h3": "text-2xl font-semibold tracking-tight",
+      "body_lg": "text-lg leading-relaxed",
+      "body_base": "text-base leading-relaxed text-muted-foreground",
+      "mono_sm": "font-mono text-sm tracking-wide"
+    }
+  },
+  "colors": {
+    "palette": {
+      "light": {
+        "background": "0 0% 100%",
+        "foreground": "240 10% 3.9%",
+        "card": "0 0% 100%",
+        "card_foreground": "240 10% 3.9%",
+        "popover": "0 0% 100%",
+        "popover_foreground": "240 10% 3.9%",
+        "primary": "240 5.9% 10%",
+        "primary_foreground": "0 0% 98%",
+        "secondary": "240 4.8% 95.9%",
+        "secondary_foreground": "240 5.9% 10%",
+        "muted": "240 4.8% 95.9%",
+        "muted_foreground": "240 3.8% 46.1%",
+        "accent": "240 4.8% 95.9%",
+        "accent_foreground": "240 5.9% 10%",
+        "destructive": "0 84.2% 60.2%",
+        "destructive_foreground": "0 0% 98%",
+        "border": "240 5.9% 90%",
+        "input": "240 5.9% 90%",
+        "ring": "240 5.9% 10%"
+      },
+      "dark": {
+        "background": "240 10% 3.9%",
+        "foreground": "0 0% 98%",
+        "card": "240 10% 3.9%",
+        "card_foreground": "0 0% 98%",
+        "popover": "240 10% 3.9%",
+        "popover_foreground": "0 0% 98%",
+        "primary": "0 0% 98%",
+        "primary_foreground": "240 5.9% 10%",
+        "secondary": "240 3.7% 15.9%",
+        "secondary_foreground": "0 0% 98%",
+        "muted": "240 3.7% 15.9%",
+        "muted_foreground": "240 5% 64.9%",
+        "accent": "240 3.7% 15.9%",
+        "accent_foreground": "0 0% 98%",
+        "destructive": "0 62.8% 30.6%",
+        "destructive_foreground": "0 0% 98%",
+        "border": "240 3.7% 15.9%",
+        "input": "240 3.7% 15.9%",
+        "ring": "240 4.9% 83.9%"
+      },
+      "brand": {
+        "indigo": "#4F46E5",
+        "teal": "#14B8A6",
+        "emerald": "#10B981",
+        "amber": "#F59E0B",
+        "rose": "#E11D48"
+      }
+    },
+    "usage": {
+      "chat_bubble_user": "bg-primary text-primary-foreground",
+      "chat_bubble_ai": "bg-muted text-foreground border border-border",
+      "success_state": "text-emerald-600 bg-emerald-50 border-emerald-200 dark:bg-emerald-950/30 dark:border-emerald-900",
+      "warning_state": "text-amber-600 bg-amber-50 border-amber-200 dark:bg-amber-950/30 dark:border-amber-900",
+      "error_state": "text-rose-600 bg-rose-50 border-rose-200 dark:bg-rose-950/30 dark:border-rose-900"
+    }
+  },
+  "layout_strategies": {
+    "dashboard_split": {
+      "type": "split-screen",
+      "description": "Main workspace divided into AI Chat (Left/Right) and Work Surface (Center)",
+      "specs": {
+        "chat_panel": "w-full lg:w-[400px] border-r border-border h-[calc(100vh-theme(spacing.14))] hidden lg:flex flex-col",
+        "work_surface": "flex-1 h-[calc(100vh-theme(spacing.14))] overflow-auto bg-muted/20 p-4 md:p-6"
+      }
+    },
+    "data_tables": {
+      "style": "dense",
+      "header": "bg-muted/50 text-muted-foreground font-medium text-xs uppercase tracking-wider sticky top-0 z-10",
+      "row": "hover:bg-muted/50 transition-colors border-b border-border/50",
+      "cell": "py-2 px-4 text-sm font-mono tabular-nums text-foreground/90"
+    },
+    "landing_page": {
+      "hero": "min-h-[80vh] flex flex-col justify-center items-center text-center p-6 bg-grid-black/[0.02] dark:bg-grid-white/[0.02]",
+      "bento_grid": "grid grid-cols-1 md:grid-cols-3 gap-4 max-w-6xl mx-auto p-4"
+    }
+  },
+  "components": {
+    "buttons": {
+      "primary": "rounded-md bg-primary text-primary-foreground shadow hover:bg-primary/90 h-9 px-4 py-2",
+      "ghost": "rounded-md hover:bg-accent hover:text-accent-foreground h-9 px-4 py-2"
+    },
+    "cards": {
+      "base": "rounded-xl border bg-card text-card-foreground shadow-sm",
+      "hover_effect": "hover:shadow-md transition-shadow duration-200"
+    },
+    "inputs": {
+      "base": "flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+    }
+  },
+  "visual_assets": {
+    "images": [
+      {
+        "category": "hero",
+        "url": "https://images.unsplash.com/photo-1574884280706-7342ca3d4231",
+        "description": "Finance book/ledger close up - used for hero or auth background"
+      },
+      {
+        "category": "office_context",
+        "url": "https://images.unsplash.com/photo-1734336009361-f8d43327430f",
+        "description": "Professional at desk with laptop - for landing page social proof"
+      },
+      {
+        "category": "team_meeting",
+        "url": "https://images.unsplash.com/photo-1565688527174-775059ac429c",
+        "description": "Team meeting close up - for 'About' or 'Firms' section"
+      }
+    ],
+    "icons": "Use 'lucide-react' for all UI icons. Use 'recharts' for data visualization."
+  },
+  "interactions": {
+    "motion": {
+      "hover": "transition-all duration-200 ease-in-out",
+      "panel_slide": "transition-transform duration-300 cubic-bezier(0.16, 1, 0.3, 1)",
+      "fade_in": "animate-in fade-in duration-500"
+    },
+    "feedback": {
+      "toast": "Use 'sonner' for all success/error notifications",
+      "loading": "Use skeleton loaders for data tables, spinners for button actions"
+    }
+  },
+  "universal_guidelines": [
+    "Dark colors look good when used independently without gradients. DO NOT use dark colors as gradients",
+    "Don't make generic centered layouts, simplistic gradients, and uniform styling.",
+    "Create depth through layered design elements with z-index hierarchy",
+    "Use glass-morphism effects with backdrop filters (12-24px blur) only for sticky headers/overlays",
+    "You MUST NOT apply universal transition. Eg: `transition: all`.",
+    "You MUST NOT center align the app container, ie do not add `.App { text-align: center; }`.",
+    "Always use modern button styles like pill-shaped, or sharp button with interaction animations",
+    "NEVER: use AI assistant Emoji characters like 🤖🧠 etc for icons. Use Lucide icons.",
+    "Prioritize using pre-existing components from src/components/ui when applicable",
+    "Components MUST use named exports",
+    "Pages MUST use default exports",
+    "Use `sonner` for toasts"
+  ]
+}
