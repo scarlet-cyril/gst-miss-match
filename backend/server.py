@@ -576,7 +576,7 @@ async def get_chat_history(client_id: str, user_id: str = Depends(get_current_us
     return messages
 
 @api_router.post("/itc/analyze")
-async def analyze_itc(client_id: str = Form(...), user_id: str = Depends(get_current_user)):
+async def analyze_itc(client_id: str, user_id: str = Depends(get_current_user)):
     invoices = await db.invoices.find(
         {"client_id": client_id, "user_id": user_id, "invoice_type": "purchase"},
         {"_id": 0}
