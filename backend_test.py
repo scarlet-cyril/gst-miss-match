@@ -301,9 +301,9 @@ class EasyXAPITester:
         success, response = self.run_test(
             "Analyze ITC Mismatches",
             "POST",
-            "itc/analyze",
+            f"itc/analyze?client_id={self.client_id}",
             200,
-            data={"client_id": self.client_id}
+            data={}
         )
         return success
 
