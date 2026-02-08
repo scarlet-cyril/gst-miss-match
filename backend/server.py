@@ -740,10 +740,14 @@ async def get_invoices(client_id: str, user_id: str = Depends(get_current_user))
 
 @api_router.post("/ledger", response_model=LedgerEntry)
 async def create_ledger_entry(entry_data: LedgerEntryCreate, user_id: str = Depends(get_current_user)):
-    entry = LedgerEntry(user_id=user_id, **entry_data.model_dump())
+    entry_dict = entry_data.model_dump()
+    if not entry_dict.get("entry_date"):
+        entry_dict["entry_date"] = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    entry = LedgerEntry(user_id=user_id, **entry_dict)
     doc = entry.model_dump()
     doc["created_at"] = doc["created_at"].isoformat()
     await db.ledger_entries.insert_one(doc)
+    logging.info(f"[Ledger] Created entry: {entry.id} for client {entry.client_id}")
     return entry
 
 @api_router.get("/ledger")
