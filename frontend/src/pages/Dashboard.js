@@ -3,7 +3,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useClient } from '@/contexts/ClientContext';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Users, Plus, LogOut, Menu, X } from 'lucide-react';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
+import { Users, Plus, LogOut, Menu, X, Trash2, AlertCircle, FileText } from 'lucide-react';
 import api from '@/services/api';
 import { toast } from 'sonner';
 import ChatPanel from '@/components/ChatPanel';
@@ -15,10 +16,18 @@ export default function Dashboard() {
   const { selectedClient, setSelectedClient, clients, setClients } = useClient();
   const [showAddClient, setShowAddClient] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [clientToDelete, setClientToDelete] = useState(null);
+  const [clientStats, setClientStats] = useState({});
 
   useEffect(() => {
     loadClients();
   }, []);
+
+  useEffect(() => {
+    if (clients.length > 0) {
+      loadAllClientStats();
+    }
+  }, [clients]);
 
   const loadClients = async () => {
     try {
@@ -32,6 +41,30 @@ export default function Dashboard() {
     }
   };
 
+  const loadAllClientStats = async () => {
+    const stats = {};
+    for (const client of clients) {
+      try {
+        const [invoicesRes, itcRes] = await Promise.all([
+          api.invoices.getAll(client.id),
+          api.itc.getMismatches(client.id)
+        ]);
+        stats[client.id] = {
+          pendingInvoices: invoicesRes.data.length,
+          itcAlerts: itcRes.data.length,
+          status: client.status || 'active'
+        };
+      } catch (error) {
+        stats[client.id] = {
+          pendingInvoices: 0,
+          itcAlerts: 0,
+          status: 'active'
+        };
+      }
+    }
+    setClientStats(stats);
+  };
+
   const handleAddClient = async (clientData) => {
     try {
       const response = await api.clients.create(clientData);
@@ -42,6 +75,60 @@ export default function Dashboard() {
     } catch (error) {
       toast.error('Failed to add client');
     }
+  };
+
+  const handleDeleteClick = (client, e) => {
+    e.stopPropagation();
+    setClientToDelete(client);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!clientToDelete) return;
+
+    try {
+      await api.clients.delete(clientToDelete.id);
+      
+      const updatedClients = clients.filter(c => c.id !== clientToDelete.id);
+      setClients(updatedClients);
+      
+      if (selectedClient?.id === clientToDelete.id) {
+        setSelectedClient(updatedClients.length > 0 ? updatedClients[0] : null);
+      }
+      
+      toast.success('Client deleted successfully');
+      setClientToDelete(null);
+    } catch (error) {
+      toast.error('Failed to delete client');
+    }
+  };
+
+  const getStatusBadge = (clientId) => {
+    const stats = clientStats[clientId];
+    if (!stats) return null;
+
+    if (stats.itcAlerts > 0) {
+      return (
+        <div className="flex items-center gap-1 text-xs text-red-600">
+          <AlertCircle className="w-3 h-3" />
+          <span>ITC alerts: {stats.itcAlerts}</span>
+        </div>
+      );
+    }
+
+    if (stats.pendingInvoices > 0) {
+      return (
+        <div className="flex items-center gap-1 text-xs text-amber-600">
+          <FileText className="w-3 h-3" />
+          <span>{stats.pendingInvoices} invoices pending</span>
+        </div>
+      );
+    }
+
+    return (
+      <div className="text-xs text-green-600">
+        ✓ All clear
+      </div>
+    );
   };
 
   return (
@@ -89,7 +176,7 @@ export default function Dashboard() {
             </div>
 
             <ScrollArea className="flex-1 p-2">
-              <div className="space-y-1">
+              <div className="space-y-2">
                 {clients.length === 0 ? (
                   <div className="text-center py-8 text-sm text-muted-foreground" data-testid="no-clients-message">
                     <Users className="w-8 h-8 mx-auto mb-2 opacity-50" />
@@ -97,24 +184,38 @@ export default function Dashboard() {
                   </div>
                 ) : (
                   clients.map((client) => (
-                    <button
+                    <div
                       key={client.id}
-                      onClick={() => {
-                        setSelectedClient(client);
-                        setSidebarOpen(false);
-                      }}
                       data-testid={`client-item-${client.id}`}
-                      className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
+                      className={`group relative rounded-lg border transition-all ${
                         selectedClient?.id === client.id
-                          ? 'bg-primary text-primary-foreground'
-                          : 'hover:bg-muted'
+                          ? 'bg-primary/10 border-primary shadow-sm'
+                          : 'border-border hover:border-primary/50 hover:bg-muted/50'
                       }`}
                     >
-                      <div className="font-medium">{client.name}</div>
-                      {client.gstin && (
-                        <div className="text-xs opacity-80 font-mono">{client.gstin}</div>
-                      )}
-                    </button>
+                      <button
+                        onClick={() => {
+                          setSelectedClient(client);
+                          setSidebarOpen(false);
+                        }}
+                        className="w-full text-left p-3 pr-10"
+                      >
+                        <div className="font-medium text-sm mb-1">{client.name}</div>
+                        {client.gstin && (
+                          <div className="text-xs text-muted-foreground font-mono mb-1">{client.gstin}</div>
+                        )}
+                        {getStatusBadge(client.id)}
+                      </button>
+                      
+                      <button
+                        onClick={(e) => handleDeleteClick(client, e)}
+                        data-testid={`delete-client-${client.id}`}
+                        className="absolute top-3 right-3 p-1.5 rounded hover:bg-red-100 dark:hover:bg-red-950 text-red-600 hover:text-red-700 transition-colors"
+                        title="Delete client"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
                   ))
                 )}
               </div>
@@ -155,6 +256,29 @@ export default function Dashboard() {
         onOpenChange={setShowAddClient}
         onSubmit={handleAddClient}
       />
+
+      <AlertDialog open={!!clientToDelete} onOpenChange={() => setClientToDelete(null)}>
+        <AlertDialogContent data-testid="delete-confirmation-dialog">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Client</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete <strong>{clientToDelete?.name}</strong>?
+              <br />
+              <span className="text-red-600 font-medium">This action cannot be undone.</span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="cancel-delete-button">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteConfirm}
+              data-testid="confirm-delete-button"
+              className="bg-red-600 hover:bg-red-700 text-white"
+            >
+              Yes, Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

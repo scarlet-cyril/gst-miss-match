@@ -7,6 +7,7 @@ export const api = {
   clients: {
     getAll: () => axios.get(`${API}/clients`),
     create: (data) => axios.post(`${API}/clients`, data),
+    delete: (clientId) => axios.delete(`${API}/clients/${clientId}`),
   },
   documents: {
     upload: (formData) => axios.post(`${API}/documents/upload`, formData, {
