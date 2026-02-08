@@ -3,7 +3,7 @@ import { useClient } from '@/contexts/ClientContext';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Send, Loader2 } from 'lucide-react';
+import { Send, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
 import api from '@/services/api';
 import { toast } from 'sonner';
 
@@ -35,7 +35,7 @@ export const ChatPanel = () => {
       const response = await api.chat.getHistory(selectedClient.id);
       setMessages(response.data);
     } catch (error) {
-      console.error('Failed to load chat history');
+      console.error('Failed to load chat history:', error);
     }
   };
 
@@ -46,15 +46,44 @@ export const ChatPanel = () => {
     setInput('');
     setLoading(true);
 
+    const tempUserMsg = {
+      id: Date.now().toString(),
+      role: 'user',
+      content: userMessage,
+      created_at: new Date().toISOString()
+    };
+    setMessages(prev => [...prev, tempUserMsg]);
+
     try {
+      console.log('[Chat] Sending message:', { client_id: selectedClient.id, content: userMessage });
+      
       const response = await api.chat.send({
         client_id: selectedClient.id,
         content: userMessage
       });
 
-      setMessages([...messages, response.data.user_message, response.data.ai_message]);
+      console.log('[Chat] Response received:', response.data);
+
+      setMessages(prev => [
+        ...prev.filter(m => m.id !== tempUserMsg.id),
+        response.data.user_message,
+        response.data.ai_message
+      ]);
+
+      // Show toast for tool executions
+      if (response.data.ai_message.tool_calls && response.data.ai_message.tool_calls.length > 0) {
+        response.data.ai_message.tool_calls.forEach(toolCall => {
+          if (toolCall.result?.success) {
+            toast.success(toolCall.result.message || 'Action completed successfully');
+          } else if (toolCall.result?.success === false) {
+            toast.error(toolCall.result.error || 'Action failed');
+          }
+        });
+      }
     } catch (error) {
-      toast.error('Failed to send message');
+      console.error('[Chat] Error:', error);
+      setMessages(prev => prev.filter(m => m.id !== tempUserMsg.id));
+      toast.error('Failed to send message: ' + (error.response?.data?.detail || error.message));
     } finally {
       setLoading(false);
     }
@@ -65,6 +94,54 @@ export const ChatPanel = () => {
       e.preventDefault();
       handleSend();
     }
+  };
+
+  const renderMessage = (msg) => {
+    const isUser = msg.role === 'user';
+    const hasToolCalls = msg.tool_calls && msg.tool_calls.length > 0;
+
+    return (
+      <div
+        key={msg.id}
+        data-testid={`chat-message-${msg.role}`}
+        className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}
+      >
+        <div className="flex flex-col gap-2 max-w-[85%]">
+          <div
+            className={`rounded-lg px-3 py-2 text-sm ${
+              isUser
+                ? 'bg-primary text-primary-foreground'
+                : 'bg-muted text-foreground border border-border'
+            }`}
+          >
+            {msg.content}
+          </div>
+          
+          {hasToolCalls && (
+            <div className="space-y-1">
+              {msg.tool_calls.map((toolCall, idx) => (
+                <div
+                  key={idx}
+                  className={`flex items-center gap-2 text-xs px-2 py-1 rounded ${
+                    toolCall.result?.success
+                      ? 'bg-green-50 text-green-700 border border-green-200'
+                      : 'bg-red-50 text-red-700 border border-red-200'
+                  }`}
+                >
+                  {toolCall.result?.success ? (
+                    <CheckCircle className="w-3 h-3" />
+                  ) : (
+                    <AlertCircle className="w-3 h-3" />
+                  )}
+                  <span className="font-medium">{toolCall.tool}:</span>
+                  <span>{toolCall.result?.message || toolCall.result?.error}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    );
   };
 
   return (
@@ -81,23 +158,7 @@ export const ChatPanel = () => {
               Start a conversation with Easy X
             </div>
           ) : (
-            messages.map((msg, idx) => (
-              <div
-                key={idx}
-                data-testid={`chat-message-${msg.role}`}
-                className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-              >
-                <div
-                  className={`max-w-[85%] rounded-lg px-3 py-2 text-sm ${
-                    msg.role === 'user'
-                      ? 'bg-primary text-primary-foreground'
-                      : 'bg-muted text-foreground border border-border'
-                  }`}
-                >
-                  {msg.content}
-                </div>
-              </div>
-            ))
+            messages.map(renderMessage)
           )}
           {loading && (
             <div className="flex justify-start" data-testid="loading-indicator">
@@ -117,7 +178,7 @@ export const ChatPanel = () => {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Ask Easy X anything..."
+            placeholder="Ask Easy X anything or say 'create ledger entry'..."
             data-testid="chat-input"
             className="min-h-[60px] resize-none"
             disabled={loading}
