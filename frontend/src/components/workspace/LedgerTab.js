@@ -3,7 +3,8 @@ import { useClient } from '@/contexts/ClientContext';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
-import { RefreshCw } from 'lucide-react';
+import { RefreshCw, Info } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import api from '@/services/api';
 import { toast } from 'sonner';
 
@@ -21,10 +22,16 @@ export const LedgerTab = () => {
   const loadLedger = async () => {
     try {
       setLoading(true);
+      console.log('[Ledger] Loading entries for client:', selectedClient.id);
       const response = await api.ledger.getAll(selectedClient.id);
+      console.log('[Ledger] Loaded entries:', response.data);
       setEntries(response.data);
+      if (response.data.length > 0) {
+        toast.success(`Loaded ${response.data.length} ledger entries`);
+      }
     } catch (error) {
-      toast.error('Failed to load ledger');
+      console.error('[Ledger] Error loading:', error);
+      toast.error('Failed to load ledger: ' + (error.response?.data?.detail || error.message));
     } finally {
       setLoading(false);
     }
@@ -35,7 +42,7 @@ export const LedgerTab = () => {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold font-heading tracking-tight">Ledger Entries</h2>
-          <p className="text-sm text-muted-foreground">Double-entry accounting ledger</p>
+          <p className="text-sm text-muted-foreground">Double-entry accounting ledger for {selectedClient?.name}</p>
         </div>
         <Button onClick={loadLedger} disabled={loading} size="sm" variant="outline" data-testid="refresh-ledger-button">
           <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
@@ -46,12 +53,23 @@ export const LedgerTab = () => {
       <Card>
         <CardHeader>
           <CardTitle>All Entries</CardTitle>
-          <CardDescription>Debit and credit entries for {selectedClient?.name}</CardDescription>
+          <CardDescription>
+            Debit and credit entries for {selectedClient?.name}
+            {entries.length > 0 && <span className="ml-2 text-primary font-semibold">({entries.length} entries)</span>}
+          </CardDescription>
         </CardHeader>
         <CardContent>
-          {entries.length === 0 ? (
-            <div className="text-center py-8 text-sm text-muted-foreground" data-testid="no-entries-message">
-              No ledger entries yet. Upload invoices to auto-generate entries.
+          {loading ? (
+            <div className="text-center py-8 text-sm text-muted-foreground">
+              <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2" />
+              Loading ledger entries...
+            </div>
+          ) : entries.length === 0 ? (
+            <div className="text-center py-8" data-testid="no-entries-message">
+              <div className="text-sm text-muted-foreground mb-2">No ledger entries yet.</div>
+              <div className="text-xs text-muted-foreground">
+                Try: Upload invoices to auto-generate entries, or ask the AI chat to "create a ledger entry".
+              </div>
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -62,8 +80,9 @@ export const LedgerTab = () => {
                     <TableHead>Account</TableHead>
                     <TableHead>Type</TableHead>
                     <TableHead>Description</TableHead>
-                    <TableHead className="text-right">Debit</TableHead>
-                    <TableHead className="text-right">Credit</TableHead>
+                    <TableHead className="text-right">Debit (₹)</TableHead>
+                    <TableHead className="text-right">Credit (₹)</TableHead>
+                    <TableHead className="text-center">Info</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -80,10 +99,26 @@ export const LedgerTab = () => {
                         {entry.description || '-'}
                       </TableCell>
                       <TableCell className="text-right font-mono">
-                        {entry.debit > 0 ? `₹${entry.debit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '-'}
+                        {entry.debit > 0 ? entry.debit.toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '-'}
                       </TableCell>
                       <TableCell className="text-right font-mono">
-                        {entry.credit > 0 ? `₹${entry.credit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '-'}
+                        {entry.credit > 0 ? entry.credit.toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '-'}
+                      </TableCell>
+                      <TableCell className="text-center">
+                        {entry.explanation && (
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button variant="ghost" size="icon" className="h-6 w-6">
+                                  <Info className="w-3 h-3" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent className="max-w-xs">
+                                <p className="text-xs">{entry.explanation}</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        )}
                       </TableCell>
                     </TableRow>
                   ))}
